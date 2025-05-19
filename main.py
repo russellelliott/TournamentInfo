@@ -124,7 +124,7 @@ Answer the question based only on the context provided."""
 @app.post("/ask-multiple-questions")
 def ask_multiple_questions():
     """
-    Endpoint to ask multiple predefined questions and combine the answers.
+    Endpoint to ask multiple predefined questions and use OpenAI to generate a structured response.
     """
     try:
         # List of predefined questions
@@ -132,7 +132,7 @@ def ask_multiple_questions():
             "What date does registration open?",
             "What date does registration close?",
             "When is the schedule released?",
-            "List off all the events on the schedule after the schedule release.",
+            "List off all the events in the section 'schedule: '",
             "What time of day are rounds scheduled for the regular season for group A teams? Please list off only the time in PT.",
             "List off the dates for the final rounds; round 1, quarterfinal, semifinal, final/3rd place"
         ]
@@ -148,7 +148,49 @@ def ask_multiple_questions():
 
         # Combine all answers into a single chunk of text
         final_response = "\n".join(combined_answers)
-        return JSONResponse(content={"combined_answers": final_response})
+
+        # Use OpenAI to generate the structured response
+        system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object.
+The JSON object should contain:
+1. A "logistics" section with "registration_open", "registration_close", and "schedule_release" fields, each having a "title" and "date".
+2. A "regular_season" section with a list of events, each having "title" and "date" fields.
+3. A "playoff_rounds" section with a list of events, each having "title" and "date" fields.
+4. Dates should be formatted as "YYYY-MM-DD HH:MM AM/PM PT".
+5. Include all events mentioned in the context, separating logistics, regular season rounds, and playoff rounds.
+
+Context:
+{final_response}
+
+The output must be a valid JSON object like this:
+{{
+    "logistics": [
+        {{"title": "Registration Opens", "date": "2025-01-01 12:00 AM PT"}},
+        {{"title": "Registration Closes", "date": "2025-03-01 11:59 PM PT"}},
+        {{"title": "Schedule Release", "date": "2025-03-05 12:00 AM PT"}}
+    ],
+    "regular_season": [
+        {{"title": "Regular Season Round 1", "date": "2025-03-10 10:00 AM PT"}},
+        {{"title": "Regular Season Round 2", "date": "2025-03-17 02:00 PM PT"}}
+    ],
+    "playoff_rounds": [
+        {{"title": "Round 1", "date": "2025-03-24 10:00 AM PT"}},
+        {{"title": "Quarterfinal", "date": "2025-03-31 02:00 PM PT"}},
+        {{"title": "Semifinal", "date": "2025-04-07 10:00 AM PT"}},
+        {{"title": "Final/3rd Place", "date": "2025-04-14 02:00 PM PT"}}
+    ]
+}}"""
+
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model=openai_api_model_name,
+            messages=[{"role": "system", "content": system_prompt}]
+        )
+
+        # Extract the AI-generated structured response
+        structured_response = json.loads(response.choices[0].message.content)
+
+        # Return the structured response
+        return JSONResponse(content=structured_response)
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing multiple questions: {str(e)}")
