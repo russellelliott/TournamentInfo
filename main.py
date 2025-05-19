@@ -89,14 +89,17 @@ def retrieve_relevant_chunks(query: str, chunks: List[dict], top_k: int = 3):
     return relevant_chunks
 
 @app.post("/ask-question")
-def ask_question(question: str = Query(..., description="The question to ask based on the PDF content")):
+def ask_question(
+    question: str = Query(..., description="The question to ask based on the PDF content"),
+    chunk_size: int = 6  # Default chunk size is 6
+):
     """
     Endpoint to answer a question based on the PDF content.
     """
     try:
         # Open and chunk the PDF
         doc = fitz.open(PDF_PATH)
-        chunks = chunk_pdf(doc)
+        chunks = chunk_pdf(doc, chunk_size=int(chunk_size))  # Ensure chunk_size is an integer
 
         # Retrieve relevant chunks
         relevant_chunks = retrieve_relevant_chunks(question, chunks)
