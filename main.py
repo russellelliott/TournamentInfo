@@ -1,6 +1,10 @@
+import os
+
+# Disable parallelism for Hugging Face tokenizers to avoid deadlocks
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
-import os
 import json
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -116,3 +120,35 @@ Answer the question based only on the context provided."""
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
+
+@app.post("/ask-multiple-questions")
+def ask_multiple_questions():
+    """
+    Endpoint to ask multiple predefined questions and combine the answers.
+    """
+    try:
+        # List of predefined questions
+        questions = [
+            "What date does registration open?",
+            "What date does registration close?",
+            "When is the schedule released?",
+            "List off all the events on the schedule after the schedule release.",
+            "What time of day are rounds scheduled for the regular season for group A teams? Please list off only the time in PT.",
+            "List off the dates for the final rounds; round 1, quarterfinal, semifinal, final/3rd place"
+        ]
+
+        # Collect answers for each question
+        combined_answers = []
+        for question in questions:
+            # Call the ask_question function for each question
+            response = ask_question(question=question)
+            response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
+            response_data = json.loads(response_content)  # Parse the JSON string
+            combined_answers.append(f"Q: {question}\nA: {response_data['answer']}\n")
+
+        # Combine all answers into a single chunk of text
+        final_response = "\n".join(combined_answers)
+        return JSONResponse(content={"combined_answers": final_response})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing multiple questions: {str(e)}")
