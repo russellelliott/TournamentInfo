@@ -10,6 +10,8 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import fitz  # PyMuPDF
 from typing import List
+import requests
+from bs4 import BeautifulSoup
 
 # Load environment variables from .env file
 load_dotenv()
@@ -197,3 +199,83 @@ The output must be a valid JSON object like this:
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing multiple questions: {str(e)}")
+
+@app.post("/get-tournament-info")
+def get_tournament_info(
+    season: str = Query(..., description="The season (Spring or Fall)"),
+    year: int = Query(..., description="The year of the tournament")
+):
+    """
+    Endpoint to retrieve tournament PDF and registration form links for a given season and year.
+    """
+    try:
+        # Validate season input
+        if season.lower() not in ["spring", "fall"]:
+            raise HTTPException(status_code=400, detail="Invalid season. Must be 'Spring' or 'Fall'.")
+
+        # Construct the search query
+        query = f"Collegiate Chess League {season.capitalize()} {year} site:chess.com"
+
+        # Google Search API setup
+        API_KEY = os.getenv("API_KEY")
+        SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
+        if not API_KEY or not SEARCH_ENGINE_ID:
+            raise HTTPException(status_code=500, detail="Google API credentials are missing.")
+
+        # Perform Google search
+        def google_search(query, api_key, cse_id, num=10):
+            url = 'https://www.googleapis.com/customsearch/v1'
+            params = {
+                'q': query,
+                'key': api_key,
+                'cx': cse_id,
+                'num': num
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            results = response.json()
+            links = [item['link'] for item in results.get('items', [])]
+            return links
+
+        search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
+
+        # Extract relevant links
+        def extract_links_from_page(url, keywords):
+            try:
+                response = requests.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, 'html.parser')
+                links = []
+                for a_tag in soup.find_all('a', href=True):
+                    href = a_tag['href']
+                    if any(keyword in href for keyword in keywords):
+                        links.append(href)
+                return links
+            except requests.RequestException as e:
+                print(f"Error fetching {url}: {e}")
+                return []
+
+        tournament_pdf_link = None
+        registration_form_link = None
+
+        for link in search_results:
+            extracted_links = extract_links_from_page(link, ['drive.google.com', 'forms.gle'])
+            for extracted_link in extracted_links:
+                if 'drive.google.com' in extracted_link and not tournament_pdf_link:
+                    tournament_pdf_link = extracted_link
+                elif 'forms.gle' in extracted_link and not registration_form_link:
+                    registration_form_link = extracted_link
+            if tournament_pdf_link and registration_form_link:
+                break
+
+        # Return the results
+        return JSONResponse(content={
+            "tournament_pdf_link": tournament_pdf_link or "Not found",
+            "registration_form_link": registration_form_link or "Not found",
+            "used_chess_com_links": search_results  # Only include Google search result links
+        })
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving tournament information: {str(e)}")
