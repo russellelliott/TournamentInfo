@@ -1,0 +1,16 @@
+requests
+beautifulsoup4
+python-dotenv
+gdown
+accelerate>=0.16.0,<1
+transformers[torch]>=4.28.1,<5
+torch
+pymupdf
+pandas
+regex
+sentence-transformers
+hf_xet
+openai
+gradio
+fastapi
+uvicorn
