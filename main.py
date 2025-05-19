@@ -12,6 +12,7 @@ import fitz  # PyMuPDF
 from typing import List
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -279,3 +280,61 @@ def get_tournament_info(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving tournament information: {str(e)}")
+
+@app.post("/validate-player")
+def validate_player(
+    username: str = Query(..., description="The Chess.com username of the player"),
+    min_account_age_days: int = Query(0, description="Minimum account age in days (default is 0)"),
+    min_blitz_games: int = Query(0, description="Minimum number of blitz games played (default is 0)")
+):
+    """
+    Endpoint to validate if a Chess.com player satisfies the requirements for account age and blitz games played.
+    """
+    try:
+        # Define headers with a User-Agent
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        # --- Get account creation date and compute age in days ---
+        profile_url = f"https://api.chess.com/pub/player/{username}"
+        profile_response = requests.get(profile_url, headers=headers)
+        if profile_response.status_code != 200:
+            raise HTTPException(status_code=404, detail=f"Player '{username}' not found on Chess.com.")
+        profile_data = profile_response.json()
+
+        joined_timestamp = profile_data.get("joined")
+        if not joined_timestamp:
+            raise HTTPException(status_code=400, detail=f"Could not retrieve account creation date for '{username}'.")
+        joined_date = datetime.fromtimestamp(joined_timestamp)
+        now = datetime.now()
+        account_age_days = (now - joined_date).days
+
+        # --- Get number of blitz games played ---
+        blitz_url = f"https://www.chess.com/callback/live/stats/{username}/chart?type=blitz"
+        blitz_response = requests.get(blitz_url, headers=headers)
+        if blitz_response.status_code != 200:
+            raise HTTPException(status_code=400, detail=f"Could not retrieve blitz games data for '{username}'.")
+        blitz_data = blitz_response.json()
+        num_blitz_games = len(blitz_data)
+
+        # --- Validate requirements ---
+        account_age_valid = account_age_days >= min_account_age_days
+        blitz_games_valid = num_blitz_games >= min_blitz_games
+
+        # --- Return validation results ---
+        return JSONResponse(content={
+            "username": username,
+            "account_age_days": account_age_days,
+            "num_blitz_games": num_blitz_games,
+            "requirements_met": account_age_valid and blitz_games_valid,
+            "details": {
+                "account_age_valid": account_age_valid,
+                "blitz_games_valid": blitz_games_valid
+            }
+        })
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error validating player '{username}': {str(e)}")
