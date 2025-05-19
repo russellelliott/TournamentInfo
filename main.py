@@ -338,3 +338,49 @@ def validate_player(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error validating player '{username}': {str(e)}")
+
+@app.post("/get-player-requirements")
+def get_player_requirements():
+    """
+    Endpoint to retrieve player requirements for the tournament.
+    """
+    try:
+        # Define the questions to ask
+        questions = [
+            {"question": "What is the minimum account age?", "chunk_size": 6},
+            {"question": "What is the minimum number of blitz games played?", "chunk_size": 8}
+        ]
+
+        # Collect answers for each question
+        answers = {}
+        for q in questions:
+            response = ask_question(question=q["question"], chunk_size=q["chunk_size"])
+            response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
+            response_data = json.loads(response_content)  # Parse the JSON string
+            answers[q["question"]] = response_data["answer"]
+
+        # Use OpenAI to extract numeric values and format the response
+        system_prompt = f"""You are a helpful assistant. Based on the following context, extract the numeric values for the minimum account age (in days) and the minimum number of blitz games played. 
+Return the output as a JSON object with the following format:
+{{
+    "minimum_account_age": <numeric_value>,
+    "minimum_games": <numeric_value>
+}}
+
+Context:
+{json.dumps(answers)}
+
+The output must be a valid JSON object."""
+        response = client.chat.completions.create(
+            model=openai_api_model_name,
+            messages=[{"role": "system", "content": system_prompt}]
+        )
+
+        # Extract the AI-generated structured response
+        structured_response = json.loads(response.choices[0].message.content)
+
+        # Return the structured response
+        return JSONResponse(content=structured_response)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving player requirements: {str(e)}")
