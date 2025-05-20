@@ -256,29 +256,28 @@ def get_tournament_info(
                 print(f"Error fetching {url}: {e}")
                 return []
 
-        def find_fair_play_link(url):
+        def find_fair_play_agreement(links):
             """
-            Search for the phrase 'fair play' in the HTML text and extract the associated link.
+            Search for a link titled 'Fair Play Agreement' in the provided links.
             """
-            try:
-                response = requests.get(url)
-                response.raise_for_status()
-                soup = BeautifulSoup(response.text, 'html.parser')
-                for a_tag in soup.find_all('a', href=True):
-                    if "fair play agreement" in a_tag.text.lower():
-                        return a_tag['href']
-                return None
-            except requests.RequestException as e:
-                print(f"Error fetching {url}: {e}")
-                return None
+            for link in links:
+                try:
+                    response = requests.get(link)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    for a_tag in soup.find_all('a', href=True):
+                        if "fair play agreement" in a_tag.text.lower():
+                            return a_tag['href']
+                except requests.RequestException as e:
+                    print(f"Error fetching {link}: {e}")
+            return None
 
         tournament_pdf_link = None
         registration_form_link = None
-        fairplay_agreement_link = None
         used_links = []  # Track only the links used to retrieve the required information
 
         for link in search_results:
-            extracted_links = extract_links_from_page(link, ['drive.google.com', 'forms.gle', 'chess.com/news', 'chess.com/events'])
+            extracted_links = extract_links_from_page(link, ['drive.google.com', 'forms.gle'])
             if extracted_links:
                 used_links.append(link)  # Add the Chess.com link to the used links list if it contains relevant links
             for extracted_link in extracted_links:
@@ -286,16 +285,16 @@ def get_tournament_info(
                     tournament_pdf_link = extracted_link
                 elif 'forms.gle' in extracted_link and not registration_form_link:
                     registration_form_link = extracted_link
-                elif 'chess.com/news' in extracted_link and not fairplay_agreement_link:
-                    # Search for the Fair Play Agreement link in the news page
-                    fairplay_agreement_link = find_fair_play_link(extracted_link)
-            if tournament_pdf_link and registration_form_link and fairplay_agreement_link:
+            if tournament_pdf_link and registration_form_link:
                 break
 
         # Filter used links to include only those that contributed to the results
         filtered_used_links = [
             link for link in used_links if link in search_results
         ]
+
+        # Search for the Fair Play Agreement link in the filtered links
+        fairplay_agreement_link = find_fair_play_agreement(filtered_used_links)
 
         # Return the results
         return JSONResponse(content={
