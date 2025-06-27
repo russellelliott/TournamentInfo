@@ -419,3 +419,50 @@ The output must be a valid JSON object."""
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving player requirements: {str(e)}")
+
+@app.post("/find-news-article")
+def find_news_article(
+    year: int = Query(..., description="The year to search for (e.g., 2025)")
+):
+    """
+    Endpoint to find a Chess.com news article for Collegiate Chess League Summer of a given year.
+    """
+    try:
+        # Google Search API setup
+        API_KEY = os.getenv("API_KEY")
+        SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
+        if not API_KEY or not SEARCH_ENGINE_ID:
+            raise HTTPException(status_code=500, detail="Google API credentials are missing.")
+
+        # Search query with year
+        query = f"Collegiate Chess League Summer {year} site:chess.com"
+
+        # Helper function reused from above
+        def google_search(query, api_key, cse_id, num=10):
+            url = 'https://www.googleapis.com/customsearch/v1'
+            params = {
+                'q': query,
+                'key': api_key,
+                'cx': cse_id,
+                'num': num
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            results = response.json()
+            links = [item['link'] for item in results.get('items', [])]
+            return links
+
+        search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
+
+        # Find the first news article link
+        news_article_link = next((link for link in search_results if link.startswith("https://www.chess.com/news/")), None)
+
+        return JSONResponse(content={
+            "news_article_link": news_article_link or "Not found",
+            "all_search_results": search_results
+        })
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error finding news article: {str(e)}")
