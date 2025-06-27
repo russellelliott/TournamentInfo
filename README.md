@@ -7,6 +7,9 @@ run app
 uvicorn main:app --reload
 ```
 
+deployed at http://127.0.0.1:8000/
+docs at http://127.0.0.1:8000/docs
+
 # Steps
 1. run `webscraper.py` to get the tournament instructions PDF and the registration form.
 2. run `download.py` to download the instructions pdf file

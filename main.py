@@ -140,7 +140,13 @@ def ask_multiple_questions():
             "When is the schedule released?",
             "List off all the events in the section 'schedule: '",
             "What time of day are rounds scheduled for the regular season for group A teams? Please list off only the time in PT.",
+            #todo: give user the option to get group B times
+            
             "List off the dates for the final rounds; round 1, quarterfinal, semifinal, final/3rd place"
+            #todo: give the user option for final rounds gor division 1
+            #currently, doing division 2 and below which is round 1, quarterfinal, semifinal, final/3rd place
+            #division 1 has Quarterfinals: November 16, ● Semifinals: November 23, ● 3rd Place/Final: November 24
+            #this change would also affect the "playoff round" section of the system prompt input format
         ]
 
         # Collect answers for each question
