@@ -50,7 +50,7 @@ def query_openai(prompt: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error querying OpenAI: {str(e)}")
 
-PDF_PATH = "CCLSpring2025.pdf"
+PDF_PATH = "CCLSpring2025.pdf" #todo: instead of hardcoding it, user retrieves this PDF from somewhere (Firebase?) or it's somehow stored in the context?
 
 def reformat_text(text: str):
     """
@@ -418,3 +418,83 @@ The output must be a valid JSON object."""
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving player requirements: {str(e)}")
+
+from fastapi import Query
+import requests
+from bs4 import BeautifulSoup
+from typing import Optional, List
+
+API_KEY = os.getenv("API_KEY")
+SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
+
+def google_search(query: str, api_key: str, cse_id: str, num: int = 10) -> List[str]:
+    url = 'https://www.googleapis.com/customsearch/v1'
+    params = {
+        'q': query,
+        'key': api_key,
+        'cx': cse_id,
+        'num': num
+    }
+    response = requests.get(url, params=params)
+    response.raise_for_status()
+    results = response.json()
+    links = [item['link'] for item in results.get('items', [])]
+    return links
+
+def parse_summer_article(url: str):
+    """Scrape the chess.com news article for tournaments, forms, club pages, and prize arenas."""
+    resp = requests.get(url)
+    soup = BeautifulSoup(resp.text, "html.parser")
+    tournaments = []
+    club_pages = []
+    weekly_prize_arenas = False
+
+    # Find all hyperlinks
+    for a in soup.find_all("a", href=True):
+        text = a.get_text(strip=True)
+        href = a["href"]
+        # Registration forms (Google Forms)
+        if "forms.gle" in href or "docs.google.com/forms" in href:
+            tournaments.append({
+                "name": text,
+                "registration_form": href
+            })
+        # Club pages
+        if "club" in href and "chess.com" in href:
+            club_pages.append({
+                "name": text,
+                "url": href
+            })
+
+    # Find mentions of "weekly prize arenas"
+    if soup.find(string=lambda s: s and "weekly prize arena" in s.lower()):
+        weekly_prize_arenas = True
+
+    return {
+        "article_url": url,
+        "tournaments": tournaments,
+        "club_pages": club_pages,
+        "weekly_prize_arenas": weekly_prize_arenas
+    }
+
+@app.get("/get-summer-tournaments")
+def get_summer_tournaments(year: int = Query(..., description="Year for the summer tournaments")):
+    """
+    Get Collegiate Chess League summer tournaments for a given year.
+    """
+    query = f"Collegiate Chess League Summer {year} site:chess.com"
+    search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
+    article_url = None
+    for link in search_results:
+        if link.startswith("https://www.chess.com/news/"):
+            article_url = link
+            break
+    if article_url:
+        data = parse_summer_article(article_url)
+        data["search_results"] = search_results
+        return data
+    else:
+        return {
+            "message": "No chess.com news article found in search results. Here are the top results.",
+            "search_results": search_results
+        }
