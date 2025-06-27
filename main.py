@@ -13,6 +13,7 @@ from typing import List
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import pdfkit
 
 # Load environment variables from .env file
 load_dotenv()
@@ -419,49 +420,96 @@ The output must be a valid JSON object."""
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error retrieving player requirements: {str(e)}")
 
-from fastapi import Query
-import requests
-from bs4 import BeautifulSoup
-from typing import Optional, List
-
-API_KEY = os.getenv("API_KEY")
-SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
-
-def google_search(query: str, api_key: str, cse_id: str, num: int = 10) -> List[str]:
-    url = 'https://www.googleapis.com/customsearch/v1'
-    params = {
-        'q': query,
-        'key': api_key,
-        'cx': cse_id,
-        'num': num
-    }
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    results = response.json()
-    links = [item['link'] for item in results.get('items', [])]
-    return links
-
-def split_text_into_chunks(text, chunk_size=6):
+def html_to_pdf(html_content, output_path):
     """
-    Split the raw text into chunks of chunk_size sentences each.
+    Convert HTML content to PDF and save to output_path using pyhtml2pdf.
+    Handles known Selenium/Chromium issues with pyhtml2pdf.
     """
-    import re
-    sentences = re.split(r'(?<=[.!?]) +', text)
-    chunks = []
-    for i in range(0, len(sentences), chunk_size):
-        chunk = " ".join(sentences[i:i+chunk_size]).strip()
-        if chunk:
-            chunks.append(chunk)
-    return chunks
+    from pyhtml2pdf import converter
+    import tempfile
+    import os
 
-def retrieve_relevant_chunks(chunks, prompt):
+    # Save HTML to a temp file
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".html") as tmp:
+        tmp.write(html_content)
+        tmp_path = tmp.name
+
+    try:
+        # Try to convert, catch Selenium/Chromium errors and give a clear message
+        converter.convert(tmp_path, output_path)
+    except AttributeError as e:
+        raise RuntimeError(
+            "pyhtml2pdf failed due to a Selenium/Chromium compatibility issue. "
+            "Make sure you have a compatible version of Chrome/Chromium and chromedriver installed. "
+            "See https://github.com/Alir3z4/html2pdf/issues/41 for more info."
+        ) from e
+    except Exception as e:
+        raise RuntimeError(f"pyhtml2pdf failed: {e}") from e
+    finally:
+        os.remove(tmp_path)
+
+@app.get("/get-summer-tournaments")
+def get_summer_tournaments(year: int = Query(..., description="Year for the summer tournaments")):
     """
-    Dummy implementation: returns chunks containing any keyword from the prompt.
-    Replace with LLM or embedding-based retrieval as needed.
+    Get Collegiate Chess League summer tournaments for a given year.
     """
-    keywords = ["tournament", "register", "club page", "weekly prize arena", "google form"]
-    relevant = []
-    for chunk in chunks:
+    query = f"Collegiate Chess League Summer {year} site:chess.com"
+    
+     # Perform Google search
+    def google_search(query, api_key, cse_id, num=10):
+        url = 'https://www.googleapis.com/customsearch/v1'
+        params = {
+            'q': query,
+            'key': api_key,
+            'cx': cse_id,
+            'num': num
+        }
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        results = response.json()
+        links = [item['link'] for item in results.get('items', [])]
+        return links
+    
+    # Google Search API setup
+    API_KEY = os.getenv("API_KEY")
+    SEARCH_ENGINE_ID = os.getenv("SEARCH_ENGINE_ID")
+    search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
+    article_url = None
+    for link in search_results:
+        if link.startswith("https://www.chess.com/news/"):
+            article_url = link
+            break
+    if article_url:
+        resp = requests.get(article_url)
+        html_content = resp.text
+        pdf_path = f"summer_{year}_tournament.pdf"
+        
+        from pyhtml2pdf import converter
+
+        converter.convert('https://pypi.org', 'sample.pdf')
+
+        # html_to_pdf(html_content, pdf_path)
+        # question = (
+        #     "List all tournaments, their registration Google Form links, and all club page links. "
+        #     "Also mention if there are weekly prize arenas."
+        # )
+        # If ask_question is a function:
+        # answer = ask_question(pdf_path, question)
+        # If ask_question is an endpoint:
+        # answer = requests.post("http://localhost:8000/ask_question", json={"pdf_path": pdf_path, "question": question}).json()
+        # For now, just return the PDF path and question for demonstration:
+        return {
+            "article_url": article_url,
+            "pdf_path": pdf_path,
+            "question": question,
+            # "answer": answer  # Uncomment if ask_question is available
+            "search_results": search_results
+        }
+    else:
+        return {
+            "message": "No chess.com news article found in search results. Here are the top results.",
+            "search_results": search_results
+        }
         if any(kw in chunk.lower() for kw in keywords):
             relevant.append(chunk)
     return relevant
