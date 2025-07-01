@@ -456,6 +456,8 @@ def find_news_article(
 
         # Find the first news article link
         news_article_link = next((link for link in search_results if link.startswith("https://www.chess.com/news/")), None)
+        
+        #todo: given the news article link, convert it to text? figure out what kinds of tournaments are there. get links from html content
 
         return JSONResponse(content={
             "news_article_link": news_article_link or "Not found",
