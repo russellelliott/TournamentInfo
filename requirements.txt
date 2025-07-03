@@ -14,3 +14,8 @@ openai
 gradio
 fastapi
 uvicorn
+langchain
+langchain-community
+tiktoken
+faiss-cpu
+langchain-openai
