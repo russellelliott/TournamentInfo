@@ -530,4 +530,3 @@ def find_news_article(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error finding news article: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error finding news article: {str(e)}")
