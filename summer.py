@@ -5,7 +5,7 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 
 # 1. Load & chunk webpage
-loader = WebBaseLoader("https://www.chess.com/news/view/announcing-collegiate-chess-league-summer-2025#format")
+loader = WebBaseLoader("https://www.chess.com/news/view/announcing-collegiate-chess-league-summer-2025")
 docs = loader.load()
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 chunks = splitter.split_documents(docs)
@@ -23,6 +23,9 @@ qa = RetrievalQA.from_chain_type(
 )
 
 # 4. Query
-query = "What are the main benefits mentioned on the page?"
-response = qa.invoke(query)
-print(response)
+query = '''
+What are the different kinds of championships offered this summer?
+A qualifier and final is considered to be part of a championship, not as seperate things.
+'''
+response = qa.invoke(query) #dictionary with query and result
+print(response['result']) #given the same prompt, result seems deterministic
