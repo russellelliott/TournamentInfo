@@ -142,12 +142,6 @@ def ask_multiple_questions():
             "List off all the events in the section 'schedule: '",
             "What time of day are rounds scheduled for the regular season for group A teams? Please list off only the time in PT.",
             #todo: give user the option to get group B times
-            
-            "List off the dates for the final rounds; round 1, quarterfinal, semifinal, final/3rd place"
-            #todo: give the user option for final rounds gor division 1
-            #currently, doing division 2 and below which is round 1, quarterfinal, semifinal, final/3rd place
-            #division 1 has Quarterfinals: November 16, ● Semifinals: November 23, ● 3rd Place/Final: November 24
-            #this change would also affect the "playoff round" section of the system prompt input format
         ]
 
         # Collect answers for each question
@@ -167,9 +161,8 @@ def ask_multiple_questions():
 The JSON object should contain:
 1. A "logistics" section with "registration_open", "registration_close", and "schedule_release" fields, each having a "title" and "date".
 2. A "regular_season" section with a list of events, each having "title" and "date" fields.
-3. A "playoff_rounds" section with a list of events, each having "title" and "date" fields.
-4. Dates should be formatted as "YYYY-MM-DD HH:MM AM/PM PT".
-5. Include all events mentioned in the context, separating logistics, regular season rounds, and playoff rounds.
+3. Dates should be formatted as "YYYY-MM-DD HH:MM AM/PM PT".
+4. Include all events mentioned in the context, separating logistics and regular season rounds.
 
 Context:
 {final_response}
@@ -184,12 +177,6 @@ The output must be a valid JSON object like this:
     "regular_season": [
         {{"title": "Regular Season Round 1", "date": "2025-03-10 10:00 AM PT"}},
         {{"title": "Regular Season Round 2", "date": "2025-03-17 02:00 PM PT"}}
-    ],
-    "playoff_rounds": [
-        {{"title": "Round 1", "date": "2025-03-24 10:00 AM PT"}},
-        {{"title": "Quarterfinal", "date": "2025-03-31 02:00 PM PT"}},
-        {{"title": "Semifinal", "date": "2025-04-07 10:00 AM PT"}},
-        {{"title": "Final/3rd Place", "date": "2025-04-14 02:00 PM PT"}}
     ]
 }}"""
 
@@ -207,6 +194,81 @@ The output must be a valid JSON object like this:
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing multiple questions: {str(e)}")
+
+@app.post("/get-final-rounds")
+def get_final_rounds(
+    division: int = Query(..., description="Division number (1 for Division 1, any other number for Division 2 and below)")
+):
+    """
+    Endpoint to get the dates for final rounds based on division.
+    """
+    try:
+        # Define division-specific questions
+        if division == 1:
+            question = "What are the dates of the 3 rounds: Quarterfinals, Semifinals, Final and 3rd Place Match. There may be multiple schedules; please provide the first schedule."
+        else:
+            question = "List off the dates for the final rounds; round 1, quarterfinal, semifinal, final/3rd place"
+
+        # Call the ask_question function
+        response = ask_question(question=question)
+        response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
+        response_data = json.loads(response_content)  # Parse the JSON string
+        
+        # Use OpenAI to generate the structured response
+        if division == 1:
+            system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object for Division 1 final rounds.
+The JSON object should contain:
+1. A "playoff_rounds" section with a list of events, each having "title" and "date" fields.
+2. Dates should be formatted as "YYYY-MM-DD HH:MM AM/PM PT".
+3. For Division 1, the rounds are: Quarterfinals, Semifinals, 3rd Place/Final.
+
+Context:
+{response_data['answer']}
+
+The output must be a valid JSON object like this:
+{{
+    "division": 1,
+    "playoff_rounds": [
+        {{"title": "Quarterfinals", "date": "2025-11-16 11:00 AM PT"}},
+        {{"title": "Semifinals", "date": "2025-11-23 11:00 AM PT"}},
+        {{"title": "3rd Place/Final", "date": "2025-11-24 11:00 AM PT"}}
+    ]
+}}"""
+        else:
+            system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object for Division 2 and below final rounds.
+The JSON object should contain:
+1. A "playoff_rounds" section with a list of events, each having "title" and "date" fields.
+2. Dates should be formatted as "YYYY-MM-DD HH:MM AM/PM PT".
+3. For Division 2 and below, the rounds are: Round 1, Quarterfinal, Semifinal, Final/3rd Place.
+
+Context:
+{response_data['answer']}
+
+The output must be a valid JSON object like this:
+{{
+    "division": "{division}",
+    "playoff_rounds": [
+        {{"title": "Round 1", "date": "2025-03-24 11:00 AM PT"}},
+        {{"title": "Quarterfinal", "date": "2025-03-31 11:00 AM PT"}},
+        {{"title": "Semifinal", "date": "2025-04-07 11:00 AM PT"}},
+        {{"title": "Final/3rd Place", "date": "2025-04-14 11:00 AM PT"}}
+    ]
+}}"""
+
+        # Call OpenAI API
+        ai_response = client.chat.completions.create(
+            model=openai_api_model_name,
+            messages=[{"role": "system", "content": system_prompt}]
+        )
+
+        # Extract the AI-generated structured response
+        structured_response = json.loads(ai_response.choices[0].message.content)
+
+        # Return the structured response
+        return JSONResponse(content=structured_response)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing final rounds for division {division}: {str(e)}")
 
 @app.post("/get-tournament-info")
 def get_tournament_info(
@@ -467,4 +529,5 @@ def find_news_article(
     except HTTPException as e:
         raise e
     except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error finding news article: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error finding news article: {str(e)}")
