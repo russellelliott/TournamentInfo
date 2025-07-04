@@ -58,6 +58,7 @@ links_context = "\n".join([f"- [{text}] → {href}" for href, text in links])
 # Query 1: Championships
 print("=== CHAMPIONSHIPS ===")
 query1 = '''
+Look specifically in the "Schedule" section of the webpage to identify what events are scheduled for the summer.
 What are the different kinds of championships offered this summer?
 A qualifier and final is considered to be part of a championship, not as separate things.
 '''
@@ -69,6 +70,7 @@ print("\n=== SCHEDULES ===")
 query2 = '''
 What is the schedule for each championship? Include dates and times when available.
 Provide the schedule for each championship type separately.
+Seperately, provide the schedule for weekly prize arenas.
 '''
 response2 = qa.invoke(query2)
 print(response2['result'])
