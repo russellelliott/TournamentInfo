@@ -197,14 +197,14 @@ The output must be a valid JSON object like this:
 
 @app.post("/get-final-rounds")
 def get_final_rounds(
-    division: int = Query(..., description="Division number (1 for Division 1, any other number for Division 2 and below)")
+    is_division_1: bool = Query(..., description="True for Division 1, False for Division 2 and below")
 ):
     """
     Endpoint to get the dates for final rounds based on division.
     """
     try:
         # Define division-specific questions
-        if division == 1:
+        if is_division_1:
             question = "What are the dates of the 3 rounds: Quarterfinals, Semifinals, Final and 3rd Place Match. There may be multiple schedules; please provide the first schedule."
         else:
             question = "List off the dates for the final rounds; round 1, quarterfinal, semifinal, final/3rd place"
@@ -215,7 +215,7 @@ def get_final_rounds(
         response_data = json.loads(response_content)  # Parse the JSON string
         
         # Use OpenAI to generate the structured response
-        if division == 1:
+        if is_division_1:
             system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object for Division 1 final rounds.
 The JSON object should contain:
 1. A "playoff_rounds" section with a list of events, each having "title" and "date" fields.
@@ -246,7 +246,7 @@ Context:
 
 The output must be a valid JSON object like this:
 {{
-    "division": "{division}",
+    "division": "2+",
     "playoff_rounds": [
         {{"title": "Round 1", "date": "2025-03-24 11:00 AM PT"}},
         {{"title": "Quarterfinal", "date": "2025-03-31 11:00 AM PT"}},
@@ -268,7 +268,8 @@ The output must be a valid JSON object like this:
         return JSONResponse(content=structured_response)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing final rounds for division {division}: {str(e)}")
+        division_type = "Division 1" if is_division_1 else "Division 2+"
+        raise HTTPException(status_code=500, detail=f"Error processing final rounds for {division_type}: {str(e)}")
 
 @app.post("/get-tournament-info")
 def get_tournament_info(
