@@ -517,8 +517,13 @@ def find_news_article(
 
         search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
 
-        # Find the first news article link
-        news_article_link = next((link for link in search_results if link.startswith("https://www.chess.com/news/")), None)
+        # Find the first news article link that contains both "summer" and the year
+        news_article_link = next((
+            link for link in search_results 
+            if link.startswith("https://www.chess.com/news/") 
+            and "summer" in link.lower() 
+            and str(year) in link
+        ), None)
         
         #todo: given the news article link, convert it to text? figure out what kinds of tournaments are there. get links from html content
 
