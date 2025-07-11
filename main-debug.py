@@ -1,5 +1,11 @@
 import os
 
+# Clear any cached environment variables and force reload
+if 'OPENAI_API_BASE' in os.environ:
+    del os.environ['OPENAI_API_BASE']
+if 'OPENAI_API_MODEL_NAME' in os.environ:
+    del os.environ['OPENAI_API_MODEL_NAME']
+
 # Disable parallelism for Hugging Face tokenizers to avoid deadlocks
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -14,14 +20,45 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import pdfkit
+import time
+import logging
 
 # Load environment variables from .env file
-load_dotenv(override=True) # Reset the environment variables; issues with OpenRouter sticking around
+load_dotenv(override=True)  # Force override existing environment variables
+
+# Debug: Print all environment variables starting with OPENAI
+print("=== Environment Variables Debug ===")
+for key, value in os.environ.items():
+    if key.startswith('OPENAI') or key.startswith('API_'):
+        print(f"{key}: {value}")
+print("===================================")
 
 # Get OpenAI API credentials from environment variables
 openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
-openai_api_model_name = os.getenv("OPENAI_API_MODEL_NAME", "gpt-4o")
+openai_api_base = os.getenv("OPENAI_API_BASE")
+openai_api_model_name = os.getenv("OPENAI_API_MODEL_NAME")
+
+# Set defaults only if not specified in .env
+if not openai_api_base:
+    openai_api_base = "https://api.openai.com/v1"
+    print(f"Using default OpenAI API Base: {openai_api_base}")
+
+if not openai_api_model_name:
+    openai_api_model_name = "gpt-4o"
+    print(f"Using default OpenAI Model: {openai_api_model_name}")
+
+# Print final configuration
+print(f"Final OpenAI API Base: {openai_api_base}")
+print(f"Final OpenAI Model: {openai_api_model_name}")
+print(f"Final OpenAI API Key present: {'Yes' if openai_api_key else 'No'}")
+
+# Validate that we're using OpenAI, not OpenRouter
+if "openrouter" in openai_api_base.lower():
+    print("WARNING: Still using OpenRouter! Check your .env file.")
+    print("Your .env file should contain:")
+    print("OPENAI_API_KEY=your_openai_key_here")
+    print("# OPENAI_API_BASE=https://api.openai.com/v1  (optional, this is the default)")
+    print("# OPENAI_API_MODEL_NAME=gpt-4o  (optional, this is the default)")
 
 if not openai_api_key:
     raise ValueError("Please add your OpenAI API key to the .env file.")
@@ -32,17 +69,32 @@ client = OpenAI(api_key=openai_api_key, base_url=openai_api_base)
 # Initialize FastAPI app
 app = FastAPI()
 
+def call_openai_with_retry(messages, max_retries=3, delay=2):
+    """
+    Call OpenAI API with retry logic for rate limiting.
+    """
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=openai_api_model_name,
+                messages=messages
+            )
+            return response
+        except Exception as e:
+            if "429" in str(e) and attempt < max_retries - 1:
+                print(f"Rate limit hit, retrying in {delay * (attempt + 1)} seconds...")
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise e
+
 @app.post("/query-openai")
 def query_openai(prompt: str):
     """
     Endpoint to query OpenAI with a given prompt.
     """
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        # Call OpenAI API with retry logic
+        response = call_openai_with_retry([{"role": "user", "content": prompt}])
 
         # Extract the AI-generated content
         ai_response = response.choices[0].message.content
@@ -103,7 +155,7 @@ def ask_question(
     try:
         # Open and chunk the PDF
         doc = fitz.open(PDF_PATH)
-        chunks = chunk_pdf(doc, chunk_size=int(chunk_size))  # Ensure chunk_size is an integer
+        chunks = chunk_pdf(doc, chunk_size=int(chunk_size))
 
         # Retrieve relevant chunks
         relevant_chunks = retrieve_relevant_chunks(question, chunks)
@@ -116,10 +168,8 @@ def ask_question(
 Context: {context}
 Question: {question}
 Answer the question based only on the context provided."""
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        
+        response = call_openai_with_retry([{"role": "system", "content": system_prompt}])
 
         # Extract the AI-generated answer
         ai_response = response.choices[0].message.content
@@ -141,22 +191,30 @@ def ask_multiple_questions():
             "When is the schedule released?",
             "List off all the events in the section 'schedule: '",
             "What time of day are rounds scheduled for the regular season for group A teams? Please list off only the time in PT.",
-            #todo: give user the option to get group B times
         ]
 
-        # Collect answers for each question
+        # Collect answers for each question with delay between calls
         combined_answers = []
-        for question in questions:
-            # Call the ask_question function for each question
-            response = ask_question(question=question)
-            response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
-            response_data = json.loads(response_content)  # Parse the JSON string
-            combined_answers.append(f"Q: {question}\nA: {response_data['answer']}\n")
+        for i, question in enumerate(questions):
+            try:
+                # Add delay between API calls to avoid rate limiting
+                if i > 0:
+                    time.sleep(1)  # 1 second delay between calls
+                
+                # Call the ask_question function for each question
+                response = ask_question(question=question)
+                response_content = response.body.decode("utf-8")
+                response_data = json.loads(response_content)
+                combined_answers.append(f"Q: {question}\nA: {response_data['answer']}\n")
+                
+            except Exception as e:
+                print(f"Error processing question '{question}': {str(e)}")
+                combined_answers.append(f"Q: {question}\nA: Error retrieving answer\n")
 
         # Combine all answers into a single chunk of text
         final_response = "\n".join(combined_answers)
 
-        # Use OpenAI to generate the structured response
+        # Use OpenAI to generate the structured response with retry logic
         system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object.
 The JSON object should contain:
 1. A "logistics" section with "registration_open", "registration_close", and "schedule_release" fields, each having a "title" and "date".
@@ -180,11 +238,8 @@ The output must be a valid JSON object like this:
     ]
 }}"""
 
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        # Call OpenAI API with retry logic
+        response = call_openai_with_retry([{"role": "system", "content": system_prompt}])
 
         # Extract the AI-generated structured response
         structured_response = json.loads(response.choices[0].message.content)
@@ -211,8 +266,8 @@ def get_final_rounds(
 
         # Call the ask_question function
         response = ask_question(question=question)
-        response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
-        response_data = json.loads(response_content)  # Parse the JSON string
+        response_content = response.body.decode("utf-8")
+        response_data = json.loads(response_content)
         
         # Use OpenAI to generate the structured response
         if is_division_1:
@@ -255,11 +310,8 @@ The output must be a valid JSON object like this:
     ]
 }}"""
 
-        # Call OpenAI API
-        ai_response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        # Call OpenAI API with retry logic
+        ai_response = call_openai_with_retry([{"role": "system", "content": system_prompt}])
 
         # Extract the AI-generated structured response
         structured_response = json.loads(ai_response.choices[0].message.content)
@@ -451,10 +503,12 @@ def get_player_requirements():
 
         # Collect answers for each question
         answers = {}
-        for q in questions:
+        for i, q in enumerate(questions):
+            if i > 0:
+                time.sleep(1)  # Add delay between calls
             response = ask_question(question=q["question"], chunk_size=q["chunk_size"])
-            response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
-            response_data = json.loads(response_content)  # Parse the JSON string
+            response_content = response.body.decode("utf-8")
+            response_data = json.loads(response_content)
             answers[q["question"]] = response_data["answer"]
 
         # Use OpenAI to extract numeric values and format the response
@@ -469,10 +523,8 @@ Context:
 {json.dumps(answers)}
 
 The output must be a valid JSON object."""
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        
+        response = call_openai_with_retry([{"role": "system", "content": system_prompt}])
 
         # Extract the AI-generated structured response
         structured_response = json.loads(response.choices[0].message.content)

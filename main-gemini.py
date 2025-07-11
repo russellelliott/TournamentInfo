@@ -6,7 +6,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 import json
-from openai import OpenAI
+import google.generativeai as genai
 from dotenv import load_dotenv
 import fitz  # PyMuPDF
 from typing import List
@@ -16,18 +16,18 @@ from datetime import datetime
 import pdfkit
 
 # Load environment variables from .env file
-load_dotenv(override=True) # Reset the environment variables; issues with OpenRouter sticking around
+load_dotenv()
 
-# Get OpenAI API credentials from environment variables
-openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
-openai_api_model_name = os.getenv("OPENAI_API_MODEL_NAME", "gpt-4o")
+# Get Google API credentials from environment variables
+google_api_key = os.getenv("GOOGLE_API_KEY")
+google_model_name = os.getenv("GOOGLE_MODEL_NAME", "gemini-1.5-flash")
 
-if not openai_api_key:
-    raise ValueError("Please add your OpenAI API key to the .env file.")
+if not google_api_key:
+    raise ValueError("Please add your Google API key to the .env file.")
 
-# Configure OpenAI API client
-client = OpenAI(api_key=openai_api_key, base_url=openai_api_base)
+# Configure Google Generative AI
+genai.configure(api_key=google_api_key)
+model = genai.GenerativeModel(google_model_name)
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -35,21 +35,18 @@ app = FastAPI()
 @app.post("/query-openai")
 def query_openai(prompt: str):
     """
-    Endpoint to query OpenAI with a given prompt.
+    Endpoint to query Google Gemini with a given prompt.
     """
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "user", "content": prompt}]
-        )
-
+        # Call Google Gemini API
+        response = model.generate_content(prompt)
+        
         # Extract the AI-generated content
-        ai_response = response.choices[0].message.content
+        ai_response = response.text
         return JSONResponse(content={"response": ai_response})
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error querying OpenAI: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error querying Google Gemini: {str(e)}")
 
 PDF_PATH = "CCLSpring2025.pdf" #todo: instead of hardcoding it, user retrieves this PDF from somewhere (Firebase?) or it's somehow stored in the context?
 
@@ -103,7 +100,7 @@ def ask_question(
     try:
         # Open and chunk the PDF
         doc = fitz.open(PDF_PATH)
-        chunks = chunk_pdf(doc, chunk_size=int(chunk_size))  # Ensure chunk_size is an integer
+        chunks = chunk_pdf(doc, chunk_size=int(chunk_size))
 
         # Retrieve relevant chunks
         relevant_chunks = retrieve_relevant_chunks(question, chunks)
@@ -111,18 +108,16 @@ def ask_question(
         # Combine relevant chunks into a single context
         context = " ".join([chunk["Text"] for chunk in relevant_chunks])
 
-        # Query OpenAI with the context and question
+        # Query Google Gemini with the context and question
         system_prompt = f"""You are a helpful assistant. Use the following context to answer the question:
 Context: {context}
 Question: {question}
 Answer the question based only on the context provided."""
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        
+        response = model.generate_content(system_prompt)
 
         # Extract the AI-generated answer
-        ai_response = response.choices[0].message.content
+        ai_response = response.text
         return JSONResponse(content={"answer": ai_response, "context_used": context})
 
     except Exception as e:
@@ -131,7 +126,7 @@ Answer the question based only on the context provided."""
 @app.post("/ask-multiple-questions")
 def ask_multiple_questions():
     """
-    Endpoint to ask multiple predefined questions and use OpenAI to generate a structured response.
+    Endpoint to ask multiple predefined questions and use Google Gemini to generate a structured response.
     """
     try:
         # List of predefined questions
@@ -156,7 +151,7 @@ def ask_multiple_questions():
         # Combine all answers into a single chunk of text
         final_response = "\n".join(combined_answers)
 
-        # Use OpenAI to generate the structured response
+        # Use Google Gemini to generate the structured response
         system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object.
 The JSON object should contain:
 1. A "logistics" section with "registration_open", "registration_close", and "schedule_release" fields, each having a "title" and "date".
@@ -180,14 +175,21 @@ The output must be a valid JSON object like this:
     ]
 }}"""
 
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        # Call Google Gemini API
+        response = model.generate_content(system_prompt)
 
-        # Extract the AI-generated structured response
-        structured_response = json.loads(response.choices[0].message.content)
+        # Clean and extract the AI-generated structured response
+        cleaned_response = clean_json_response(response.text)
+        
+        try:
+            structured_response = json.loads(cleaned_response)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return the raw response for debugging
+            return JSONResponse(content={
+                "error": "Failed to parse JSON response",
+                "raw_response": response.text,
+                "cleaned_response": cleaned_response
+            })
 
         # Return the structured response
         return JSONResponse(content=structured_response)
@@ -214,7 +216,7 @@ def get_final_rounds(
         response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
         response_data = json.loads(response_content)  # Parse the JSON string
         
-        # Use OpenAI to generate the structured response
+        # Use Google Gemini to generate the structured response
         if is_division_1:
             system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object for Division 1 final rounds.
 The JSON object should contain:
@@ -255,14 +257,21 @@ The output must be a valid JSON object like this:
     ]
 }}"""
 
-        # Call OpenAI API
-        ai_response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        # Call Google Gemini API
+        ai_response = model.generate_content(system_prompt)
 
-        # Extract the AI-generated structured response
-        structured_response = json.loads(ai_response.choices[0].message.content)
+        # Clean and extract the AI-generated structured response
+        cleaned_response = clean_json_response(ai_response.text)
+        
+        try:
+            structured_response = json.loads(cleaned_response)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return the raw response for debugging
+            return JSONResponse(content={
+                "error": "Failed to parse JSON response",
+                "raw_response": ai_response.text,
+                "cleaned_response": cleaned_response
+            })
 
         # Return the structured response
         return JSONResponse(content=structured_response)
@@ -457,7 +466,7 @@ def get_player_requirements():
             response_data = json.loads(response_content)  # Parse the JSON string
             answers[q["question"]] = response_data["answer"]
 
-        # Use OpenAI to extract numeric values and format the response
+        # Use Google Gemini to extract numeric values and format the response
         system_prompt = f"""You are a helpful assistant. Based on the following context, extract the numeric values for the minimum account age (in days) and the minimum number of blitz games played. 
 Return the output as a JSON object with the following format:
 {{
@@ -469,13 +478,21 @@ Context:
 {json.dumps(answers)}
 
 The output must be a valid JSON object."""
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        
+        response = model.generate_content(system_prompt)
 
-        # Extract the AI-generated structured response
-        structured_response = json.loads(response.choices[0].message.content)
+        # Clean and extract the AI-generated structured response
+        cleaned_response = clean_json_response(response.text)
+        
+        try:
+            structured_response = json.loads(cleaned_response)
+        except json.JSONDecodeError:
+            # If JSON parsing fails, return the raw response for debugging
+            return JSONResponse(content={
+                "error": "Failed to parse JSON response",
+                "raw_response": response.text,
+                "cleaned_response": cleaned_response
+            })
 
         # Return the structured response
         return JSONResponse(content=structured_response)
@@ -536,3 +553,22 @@ def find_news_article(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error finding news article: {str(e)}")
+
+def clean_json_response(response_text: str) -> str:
+    """
+    Clean the response text to extract valid JSON from Gemini's response.
+    Handles cases where Gemini returns markdown-formatted JSON or extra text.
+    """
+    import re
+    
+    # Remove markdown code blocks if present
+    response_text = re.sub(r'```json\s*', '', response_text)
+    response_text = re.sub(r'```\s*$', '', response_text)
+    
+    # Try to find JSON object in the response
+    json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+    if json_match:
+        return json_match.group(0)
+    
+    # If no JSON found, return the original text
+    return response_text.strip()

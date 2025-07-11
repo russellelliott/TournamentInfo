@@ -51,3 +51,12 @@ OPENAI_API_KEY=[openrouter API key]
 OPENAI_API_BASE=https://openrouter.ai/api/v1 (use this regardless of OpenAI model)
 OPENAI_API_MODEL_NAME=meta-llama/llama-3.2-11b-vision-instruct:free (or any other model. for our use case, a free model performs just as well as ChatGPT 4.1, which is what I was using before)
 ```
+
+encountering strange issues with openrouter
+```
+Error processing question 'What date does registration open?': 500: Error processing question: Error code: 429 - {'error': {'message': 'Rate limit exceeded: limit_rpm/qwen/qwen3-4b-04-28/2e98edb5-b21b-455b-afb4-d5c01aad515d. High demand for qwen/qwen3-4b:free on OpenRouter - limited to 1 requests per minute. Please retry shortly.', 'code': 429, 'metadata': {'headers': {'X-RateLimit-Limit': '1', 'X-RateLimit-Remaining': '0', 'X-RateLimit-Reset': '1752248580000'}, 'provider_name': None}}, 'user_id': '...'}
+```
+
+need to purchase credits to increase rate limits
+https://openrouter.ai/docs/api-reference/limits
+

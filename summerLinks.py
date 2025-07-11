@@ -67,5 +67,6 @@ each tournament type also has a club page
 bullet club page
 - [bullet club page] → https://www.chess.com/club/collegiate-chess-league-summer-2025-bullet-championship
 
-
+not ccl-specific
+- [Chess.com Bughouse Chess Championship] → https://www.chess.com/events/2025-chesscom-bughouse-championship
 '''

@@ -9,7 +9,7 @@ from bs4.element import Comment
 from urllib.parse import urljoin
 
 url = "https://www.chess.com/news/view/announcing-collegiate-chess-league-summer-2025"
-
+# url = "https://www.chess.com/news/view/collegiate-chess-league-2024-summer-season"
 
 # 1. Load & chunk webpage
 loader = WebBaseLoader(url)
@@ -59,7 +59,7 @@ links_context = "\n".join([f"- [{text}] → {href}" for href, text in links])
 print("=== CHAMPIONSHIPS ===")
 query1 = '''
 Look specifically in the "Schedule" section of the webpage to identify what events are scheduled for the summer.
-What are the different kinds of championships offered this summer?
+What are the different kinds of championships and arenas offered this summer?
 A qualifier and final is considered to be part of a championship, not as separate things.
 '''
 response1 = qa.invoke(query1)
@@ -83,10 +83,33 @@ Based on the following list of links and their text from the webpage:
 {links_context}
 
 For each championship type, identify:
-1. The Google form registration link (if available)
-2. The chess.com club page link (if available)
+1. The Google form registration link for that tournament
+2. The chess.com club page link for that tournament
 
 Present this information clearly for each championship.
 '''
 response3 = qa.invoke(query3)
 print(response3['result'])
+
+# Query 4: Championship-related links
+print("\n=== CHAMPIONSHIP LINKS ===")
+query4 = f'''
+From the following list of links extracted from the webpage:
+
+{links_context}
+
+Filter and identify all links that are related to championships, tournaments, registration, or club pages. 
+Look for links that contain keywords like:
+- "championship"
+- "tournament" 
+- "registration"
+- "form"
+- "club"
+- "arena"
+- "chess.com/club"
+- "google.com/forms"
+
+Group them by category (registration forms, club pages, tournament pages, etc.) and provide a clear summary.
+'''
+response4 = qa.invoke(query4)
+print(response4['result'])
