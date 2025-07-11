@@ -55,15 +55,15 @@ links = extract_links_and_text(soup, url)
 # Format links for context
 links_context = "\n".join([f"- [{text}] → {href}" for href, text in links])
 
-# Query 1: Championships
-print("=== CHAMPIONSHIPS ===")
-query1 = '''
-Look specifically in the "Schedule" section of the webpage to identify what events are scheduled for the summer.
-What are the different kinds of championships and arenas offered this summer?
-A qualifier and final is considered to be part of a championship, not as separate things.
-'''
-response1 = qa.invoke(query1)
-print(response1['result'])
+# # Query 1: Championships
+# print("=== CHAMPIONSHIPS ===")
+# query1 = '''
+# Look specifically in the "Schedule" section of the webpage to identify what events are scheduled for the summer.
+# What are the different kinds of championships and arenas offered this summer?
+# A qualifier and final is considered to be part of a championship, not as separate things.
+# '''
+# response1 = qa.invoke(query1)
+# print(response1['result'])
 
 # Query 2: Schedule for each championship
 print("\n=== SCHEDULES ===")
@@ -75,21 +75,21 @@ Seperately, provide the schedule for weekly prize arenas.
 response2 = qa.invoke(query2)
 print(response2['result'])
 
-# Query 3: Registration links and club pages
-print("\n=== REGISTRATION & CLUB LINKS ===")
-query3 = f'''
-Based on the following list of links and their text from the webpage:
+# # Query 3: Registration links and club pages
+# print("\n=== REGISTRATION & CLUB LINKS ===")
+# query3 = f'''
+# Based on the following list of links and their text from the webpage:
 
-{links_context}
+# {links_context}
 
-For each championship type, identify:
-1. The Google form registration link for that tournament
-2. The chess.com club page link for that tournament
+# For each championship type, identify:
+# 1. The Google form registration link for that tournament
+# 2. The chess.com club page link for that tournament
 
-Present this information clearly for each championship.
-'''
-response3 = qa.invoke(query3)
-print(response3['result'])
+# Present this information clearly for each championship.
+# '''
+# response3 = qa.invoke(query3)
+# print(response3['result'])
 
 # Query 4: Championship-related links
 print("\n=== CHAMPIONSHIP LINKS ===")
@@ -113,3 +113,45 @@ Group them by category (registration forms, club pages, tournament pages, etc.) 
 '''
 response4 = qa.invoke(query4)
 print(response4['result'])
+
+# Query 5: Combine tournament information into structured format
+print("\n=== TOURNAMENT INFORMATION SUMMARY ===")
+query5 = f'''
+Based on the following information:
+
+SCHEDULES:
+{response2['result']}
+
+CHAMPIONSHIP LINKS:
+{response4['result']}
+
+REGISTRATION FORMS:
+1. [Bullet Registration] → https://docs.google.com/forms/d/e/1FAIpQLSfO8zpBifqShGpBf_spuuV1oaTRZ3_bMBnpSeP5kdMda-rGBA/viewform
+2. [Team Chess Battle Registration] → https://docs.google.com/forms/d/e/1FAIpQLSd36yXVZ3hegu_bW4VPd_rLZNHR0DbvCow0ttpYPOyKzbXwHQ/viewform
+3. [Weekly Prize Arenas] → https://docs.google.com/forms/d/e/1FAIpQLSfXasE8xIS9lQnK85lWjFoABk_TUbkRGwECqo4LLzysTySnVg/viewform
+
+CLUB PAGES:
+1. [bullet club page] → https://www.chess.com/club/collegiate-chess-league-summer-2025-bullet-championship
+2. [CCL Club Page] → https://www.chess.com/join/collegiate-chess-league
+
+Create a structured list of tournament objects with the following format:
+
+For Championships:
+- Tournament Name: [name]
+- Registration Deadline: [deadline with time and timezone]
+- Registration Form: [URL]
+- Club Page: [URL if available]
+- Rounds:
+  - Round Name: [name] - Date: [date and time]
+  - Round Name: [name] - Date: [date and time]
+
+For Prize Arenas:
+- Tournament Name: Weekly Prize Arenas
+- Registration Form: [URL]
+- Schedule: [recurring schedule with dates and times]
+
+Present this information in a clear, structured format for each tournament.
+'''
+
+response5 = qa.invoke(query5)
+print(response5['result'])
