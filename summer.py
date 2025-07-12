@@ -125,15 +125,6 @@ SCHEDULES:
 CHAMPIONSHIP LINKS:
 {response4['result']}
 
-REGISTRATION FORMS:
-1. [Bullet Registration] → https://docs.google.com/forms/d/e/1FAIpQLSfO8zpBifqShGpBf_spuuV1oaTRZ3_bMBnpSeP5kdMda-rGBA/viewform
-2. [Team Chess Battle Registration] → https://docs.google.com/forms/d/e/1FAIpQLSd36yXVZ3hegu_bW4VPd_rLZNHR0DbvCow0ttpYPOyKzbXwHQ/viewform
-3. [Weekly Prize Arenas] → https://docs.google.com/forms/d/e/1FAIpQLSfXasE8xIS9lQnK85lWjFoABk_TUbkRGwECqo4LLzysTySnVg/viewform
-
-CLUB PAGES:
-1. [bullet club page] → https://www.chess.com/club/collegiate-chess-league-summer-2025-bullet-championship
-2. [CCL Club Page] → https://www.chess.com/join/collegiate-chess-league
-
 Create a structured list of tournament objects with the following format:
 
 For Championships:
