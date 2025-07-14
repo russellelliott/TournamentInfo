@@ -7,6 +7,10 @@ import requests
 from bs4 import BeautifulSoup
 from bs4.element import Comment
 from urllib.parse import urljoin
+from openai import OpenAI
+import os
+from dotenv import load_dotenv
+import json
 
 url = "https://www.chess.com/news/view/announcing-collegiate-chess-league-summer-2025"
 # url = "https://www.chess.com/news/view/collegiate-chess-league-2024-summer-season"
@@ -146,3 +150,61 @@ Present this information in a clear, structured format for each tournament.
 
 response5 = qa.invoke(query5)
 print(response5['result'])
+
+# Query 6: Structure tournament information into JSON objects
+print("\n=== STRUCTURED TOURNAMENT OBJECTS ===")
+query6 = f'''
+Based on the following tournament information:
+
+{response5['result']}
+
+Create a structured JSON array of tournament objects. Each tournament object should have:
+- "tournament_name": string
+- "registration_deadline": string (include date, time, and timezone in PT)
+- "rounds": array of objects with "title" and "date" fields
+
+Format dates as "YYYY-MM-DD HH:MM AM/PM PT" when possible.
+If exact dates/times are not available, use the information provided.
+
+Return only valid JSON format like this:
+[
+  {{
+    "tournament_name": "Championship Name",
+    "registration_deadline": "2025-01-15 11:59 PM PT",
+    "rounds": [
+      {{"title": "Qualifier", "date": "2025-01-20 10:00 AM PT"}},
+      {{"title": "Final", "date": "2025-01-27 02:00 PM PT"}}
+    ]
+  }}
+]
+'''
+
+# Use OpenAI to structure the response
+load_dotenv(override=True)
+openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
+openai_api_model_name = os.getenv("OPENAI_API_MODEL_NAME", "gpt-4o")
+
+if not openai_api_key:
+    raise ValueError("Please add your OpenAI API key to the .env file.")
+
+# Configure OpenAI API client
+client = OpenAI(api_key=openai_api_key, base_url=openai_api_base)
+
+try:
+    response = client.chat.completions.create(
+        model=openai_api_model_name,
+        messages=[{"role": "user", "content": query6}]
+    )
+    
+    structured_response = response.choices[0].message.content
+    # Try to parse as JSON to validate format
+    try:
+        tournament_objects = json.loads(structured_response)
+        print(json.dumps(tournament_objects, indent=2))
+    except json.JSONDecodeError:
+        print("Raw response:")
+        print(structured_response)
+        
+except Exception as e:
+    print(f"Error structuring tournament data: {e}")
