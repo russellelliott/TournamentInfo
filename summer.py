@@ -198,13 +198,16 @@ try:
     )
     
     structured_response = response.choices[0].message.content
+    # get the json response
+    structured_response = json.loads(response.choices[0].message.content)
+    print(structured_response)
     # Try to parse as JSON to validate format
-    try:
-        tournament_objects = json.loads(structured_response)
-        print(json.dumps(tournament_objects, indent=2))
-    except json.JSONDecodeError:
-        print("Raw response:")
-        print(structured_response)
+    # try:
+    #     tournament_objects = json.loads(structured_response)
+    #     print(json.dumps(tournament_objects, indent=2))
+    # except json.JSONDecodeError:
+    #     print("Raw response:")
+    #     print(structured_response)
         
 except Exception as e:
     print(f"Error structuring tournament data: {e}")
