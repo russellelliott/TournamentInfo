@@ -60,3 +60,7 @@ Error processing question 'What date does registration open?': 500: Error proces
 need to purchase credits to increase rate limits
 https://openrouter.ai/docs/api-reference/limits
 
+activate virtual environment
+```
+source .venv/bin/activate
+```

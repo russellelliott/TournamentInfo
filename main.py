@@ -6,14 +6,21 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 import json
-from openai import OpenAI
 from dotenv import load_dotenv
-import fitz  # PyMuPDF
 from typing import List
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-import pdfkit
+
+# LangChain imports
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain.chains import RetrievalQA
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.schema import Document
 
 # Load environment variables from .env file
 load_dotenv(override=True) # Reset the environment variables; issues with OpenRouter sticking around
@@ -26,26 +33,28 @@ openai_api_model_name = os.getenv("OPENAI_API_MODEL_NAME", "gpt-4o")
 if not openai_api_key:
     raise ValueError("Please add your OpenAI API key to the .env file.")
 
-# Configure OpenAI API client
-client = OpenAI(api_key=openai_api_key, base_url=openai_api_base)
-
 # Initialize FastAPI app
 app = FastAPI()
 
 @app.post("/query-openai")
 def query_openai(prompt: str):
     """
-    Endpoint to query OpenAI with a given prompt.
+    Endpoint to query OpenAI with a given prompt using LangChain.
     """
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(
+        # Use LangChain ChatOpenAI
+        llm = ChatOpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
             model=openai_api_model_name,
-            messages=[{"role": "user", "content": prompt}]
+            temperature=0
         )
 
+        # Call LangChain ChatOpenAI
+        response = llm.invoke(prompt)
+        
         # Extract the AI-generated content
-        ai_response = response.choices[0].message.content
+        ai_response = response.content
         return JSONResponse(content={"response": ai_response})
 
     except Exception as e:
@@ -53,77 +62,113 @@ def query_openai(prompt: str):
 
 PDF_PATH = "CCLSpring2025.pdf" #todo: instead of hardcoding it, user retrieves this PDF from somewhere (Firebase?) or it's somehow stored in the context?
 
-def reformat_text(text: str):
-    """
-    Reformat text by replacing newlines with spaces.
-    """
-    return text.replace("\n", " ")
+# Global variables for caching
+_vector_store = None
+_qa_chain = None
 
-def chunk_pdf(doc, chunk_size=6):
-    """
-    Chunk the PDF into smaller text segments.
-    """
-    text_per_page = []
-    for page_number, page in enumerate(doc):
-        sentence = ''
-        accumulated_text = ''
-        for i, text in enumerate(page.get_text("text").split("\n")):
-            if text.upper() == text:  # Remove headers
-                text = text.replace(text, " ")
-            accumulated_text += text
-            if i > 0 and i % chunk_size == 0:
-                sentence += accumulated_text
-                sentence = reformat_text(sentence)
-                text_per_page.append({"Text": sentence, "Page_#": page_number})
-                accumulated_text = ''
-                sentence = ''
-    return text_per_page
+def clear_pdf_cache():
+    """Clear the PDF processing cache to force reinitialization."""
+    global _vector_store, _qa_chain
+    _vector_store = None
+    _qa_chain = None
 
-def retrieve_relevant_chunks(query: str, chunks: List[dict], top_k: int = 3):
+def initialize_pdf_processing():
     """
-    Retrieve the most relevant chunks based on the query.
+    Initialize the PDF processing pipeline using LangChain.
+    This includes loading, chunking, embedding, and setting up the retrieval chain.
     """
-    from sentence_transformers import SentenceTransformer, util
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    query_embedding = model.encode(query, convert_to_tensor=True)
-    chunk_embeddings = model.encode([chunk["Text"] for chunk in chunks], convert_to_tensor=True)
-    scores = util.pytorch_cos_sim(query_embedding, chunk_embeddings)[0]
-    top_results = scores.topk(k=top_k)
-    relevant_chunks = [chunks[idx] for idx in top_results.indices]
-    return relevant_chunks
+    global _vector_store, _qa_chain
+    
+    if _vector_store is None or _qa_chain is None:
+        # Load PDF using LangChain
+        loader = PyMuPDFLoader(PDF_PATH)
+        documents = loader.load()
+        
+        # Split documents into chunks with better parameters for section-based retrieval
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=800,  # Slightly smaller chunks for better precision
+            chunk_overlap=150,  # More overlap to ensure sections aren't split
+            length_function=len,
+            separators=["\n\n", "\n", ". ", " ", ""]  # Better separators to preserve sentences
+        )
+        texts = text_splitter.split_documents(documents)
+        
+        # Create embeddings
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        
+        # Create vector store
+        _vector_store = FAISS.from_documents(texts, embeddings)
+        
+        # Create QA chain with better retrieval settings
+        llm = ChatOpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+            model=openai_api_model_name,
+            temperature=0
+        )
+        
+        # Custom prompt template
+        prompt_template = """Use the following pieces of context to answer the question at the end. 
+        If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        Pay special attention to section numbers and specific requirements mentioned in the context.
+
+        {context}
+
+        Question: {question}
+        Answer:"""
+        
+        PROMPT = PromptTemplate(
+            template=prompt_template, input_variables=["context", "question"]
+        )
+        
+        _qa_chain = RetrievalQA.from_chain_type(
+            llm=llm,
+            chain_type="stuff",
+            retriever=_vector_store.as_retriever(search_kwargs={"k": 5}),  # Retrieve more docs
+            chain_type_kwargs={"prompt": PROMPT},
+            return_source_documents=True
+        )
+    
+    return _vector_store, _qa_chain
+
+def query_pdf_with_langchain(question: str):
+    """
+    Query the PDF using LangChain's retrieval QA chain.
+    """
+    vector_store, qa_chain = initialize_pdf_processing()
+    
+    # Get answer from the QA chain
+    result = qa_chain({"query": question})
+    
+    # Extract relevant information
+    answer = result["result"]
+    source_docs = result.get("source_documents", [])
+    
+    # Prepare context from source documents
+    context = " ".join([doc.page_content for doc in source_docs])
+    
+    return {
+        "answer": answer,
+        "context": context,
+        "source_pages": [doc.metadata.get("page", "Unknown") for doc in source_docs]
+    }
 
 @app.post("/ask-question")
 def ask_question(
-    question: str = Query(..., description="The question to ask based on the PDF content"),
-    chunk_size: int = 6  # Default chunk size is 6
+    question: str = Query(..., description="The question to ask based on the PDF content")
 ):
     """
-    Endpoint to answer a question based on the PDF content.
+    Endpoint to answer a question based on the PDF content using LangChain.
     """
     try:
-        # Open and chunk the PDF
-        doc = fitz.open(PDF_PATH)
-        chunks = chunk_pdf(doc, chunk_size=int(chunk_size))  # Ensure chunk_size is an integer
-
-        # Retrieve relevant chunks
-        relevant_chunks = retrieve_relevant_chunks(question, chunks)
-
-        # Combine relevant chunks into a single context
-        context = " ".join([chunk["Text"] for chunk in relevant_chunks])
-
-        # Query OpenAI with the context and question
-        system_prompt = f"""You are a helpful assistant. Use the following context to answer the question:
-Context: {context}
-Question: {question}
-Answer the question based only on the context provided."""
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
-
-        # Extract the AI-generated answer
-        ai_response = response.choices[0].message.content
-        return JSONResponse(content={"answer": ai_response, "context_used": context})
+        # Use LangChain to query the PDF
+        result = query_pdf_with_langchain(question)
+        
+        return JSONResponse(content={
+            "answer": result["answer"],
+            "context_used": result["context"],
+            "source_pages": result["source_pages"]
+        })
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing question: {str(e)}")
@@ -131,7 +176,7 @@ Answer the question based only on the context provided."""
 @app.post("/ask-multiple-questions")
 def ask_multiple_questions():
     """
-    Endpoint to ask multiple predefined questions and use OpenAI to generate a structured response.
+    Endpoint to ask multiple predefined questions and use LangChain to generate a structured response.
     """
     try:
         # List of predefined questions
@@ -156,7 +201,14 @@ def ask_multiple_questions():
         # Combine all answers into a single chunk of text
         final_response = "\n".join(combined_answers)
 
-        # Use OpenAI to generate the structured response
+        # Use LangChain ChatOpenAI to generate the structured response
+        llm = ChatOpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+            model=openai_api_model_name,
+            temperature=0
+        )
+
         system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object.
 The JSON object should contain:
 1. A "logistics" section with "registration_open", "registration_close", and "schedule_release" fields, each having a "title" and "date".
@@ -180,14 +232,11 @@ The output must be a valid JSON object like this:
     ]
 }}"""
 
-        # Call OpenAI API
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
-
+        # Call LangChain ChatOpenAI
+        response = llm.invoke(system_prompt)
+        
         # Extract the AI-generated structured response
-        structured_response = json.loads(response.choices[0].message.content)
+        structured_response = json.loads(response.content)
 
         # Return the structured response
         return JSONResponse(content=structured_response)
@@ -214,7 +263,14 @@ def get_final_rounds(
         response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
         response_data = json.loads(response_content)  # Parse the JSON string
         
-        # Use OpenAI to generate the structured response
+        # Use LangChain ChatOpenAI to generate the structured response
+        llm = ChatOpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+            model=openai_api_model_name,
+            temperature=0
+        )
+
         if is_division_1:
             system_prompt = f"""You are a helpful assistant. Based on the following context, generate a structured JSON object for Division 1 final rounds.
 The JSON object should contain:
@@ -255,14 +311,11 @@ The output must be a valid JSON object like this:
     ]
 }}"""
 
-        # Call OpenAI API
-        ai_response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+        # Call LangChain ChatOpenAI
+        ai_response = llm.invoke(system_prompt)
 
         # Extract the AI-generated structured response
-        structured_response = json.loads(ai_response.choices[0].message.content)
+        structured_response = json.loads(ai_response.content)
 
         # Return the structured response
         return JSONResponse(content=structured_response)
@@ -443,39 +496,52 @@ def get_player_requirements():
     Endpoint to retrieve player requirements for the tournament.
     """
     try:
-        # Define the questions to ask
+        # Use more specific queries to get better retrieval results
         questions = [
-            {"question": "What is the minimum account age?", "chunk_size": 6},
-            {"question": "What is the minimum number of blitz games played?", "chunk_size": 8}
+            "What is the minimum account age in days for players? Look for section 5.4.4 about minimum account age and eligibility requirements.",
+            "What is the minimum number of rated blitz games that players must have completed? Look for section 5.4.3 about minimum games played and eligibility."
         ]
 
-        # Collect answers for each question
-        answers = {}
-        for q in questions:
-            response = ask_question(question=q["question"], chunk_size=q["chunk_size"])
-            response_content = response.body.decode("utf-8")  # Decode the JSONResponse body
-            response_data = json.loads(response_content)  # Parse the JSON string
-            answers[q["question"]] = response_data["answer"]
+        # Initialize the PDF processing
+        vector_store, qa_chain = initialize_pdf_processing()
+        
+        # Get more context by retrieving more documents
+        retriever = vector_store.as_retriever(search_kwargs={"k": 8})
+        
+        # Search for documents containing player eligibility requirements
+        eligibility_docs = retriever.get_relevant_documents("player eligibility requirements minimum account age blitz games section 5.4")
+        
+        # Combine context from all relevant documents
+        combined_context = " ".join([doc.page_content for doc in eligibility_docs])
 
-        # Use OpenAI to extract numeric values and format the response
-        system_prompt = f"""You are a helpful assistant. Based on the following context, extract the numeric values for the minimum account age (in days) and the minimum number of blitz games played. 
-Return the output as a JSON object with the following format:
+        # Use LangChain ChatOpenAI to extract numeric values with better prompting
+        llm = ChatOpenAI(
+            api_key=openai_api_key,
+            base_url=openai_api_base,
+            model=openai_api_model_name,
+            temperature=0
+        )
+
+        extraction_prompt = f"""You are a helpful assistant. Based on the following context from a tournament rules document, extract the exact numeric values for player eligibility requirements:
+
+1. Minimum account age (in days) - look for section 5.4.4
+2. Minimum number of rated blitz games that must be completed - look for section 5.4.3
+
+Context:
+{combined_context}
+
+Extract the exact numbers mentioned in sections 5.4.3 and 5.4.4. The minimum games should be 25 (not 9) and account age should be 90 days.
+
+Return ONLY a JSON object in this format:
 {{
     "minimum_account_age": <numeric_value>,
     "minimum_games": <numeric_value>
-}}
-
-Context:
-{json.dumps(answers)}
-
-The output must be a valid JSON object."""
-        response = client.chat.completions.create(
-            model=openai_api_model_name,
-            messages=[{"role": "system", "content": system_prompt}]
-        )
+}}"""
+        
+        response = llm.invoke(extraction_prompt)
 
         # Extract the AI-generated structured response
-        structured_response = json.loads(response.choices[0].message.content)
+        structured_response = json.loads(response.content)
 
         # Return the structured response
         return JSONResponse(content=structured_response)
