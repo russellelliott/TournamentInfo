@@ -64,3 +64,5 @@ activate virtual environment
 ```
 source .venv/bin/activate
 ```
+
+get a firebase json from python and add stuff to the env file.
