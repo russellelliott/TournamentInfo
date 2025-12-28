@@ -14,11 +14,24 @@ export default function CCLSearch() {
   const [loading, setLoading] = useState(false);
 
   const search = async () => {
-    const searchQuery = `Collegiate Chess League ${season.charAt(0).toUpperCase() + season.slice(1)} ${year} site:chess.com`;
     setLoading(true);
     setScrapedData([]);
-    
+
     try {
+      // Check if tournament already exists
+      const tournamentsRef = collection(db, "ccl-tournament-info");
+      const q = query(tournamentsRef, where("season", "==", season), where("year", "==", year));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        console.log("Tournament already exists for this season and year.");
+        toast.info(`Tournament info for ${season} ${year} already exists.`);
+        setLoading(false);
+        return;
+      }
+
+      const searchQuery = `Collegiate Chess League ${season.charAt(0).toUpperCase() + season.slice(1)} ${year} site:chess.com`;
+      
       const response = await fetch('https://api.perplexity.ai/chat/completions', {
         method: 'POST',
         headers: {
@@ -104,7 +117,10 @@ export default function CCLSearch() {
       setScrapedData(results);
 
       // Save to Firestore
-      const tournamentsRef = collection(db, "ccl-tournament-info");
+      // Note: We already checked for existence at the start, but we'll just add the doc here.
+      // Since we returned early if it existed, we can assume it's safe to add, 
+      // or we can keep a check if we want to be extra safe against race conditions.
+      // For simplicity and since we are in a single user flow mostly, we can just add.
       
       for (const result of results) {
         const tournamentData = {
@@ -118,22 +134,13 @@ export default function CCLSearch() {
           platform: result.platform[0] || ''
         };
 
-        // Check if exists
-        const q = query(tournamentsRef, where("season", "==", season), where("year", "==", year));
-        const querySnapshot = await getDocs(q);
-
-        if (querySnapshot.empty) {
-          try {
-            await addDoc(tournamentsRef, tournamentData);
-            console.log("Document written with ID: ", tournamentData);
-            toast.success(`Tournament info for ${season} ${year} added successfully!`);
-          } catch (e) {
-            console.error("Error adding document: ", e);
-            toast.error("Error adding tournament info to database.");
-          }
-        } else {
-            console.log("Tournament already exists for this season and year.");
-            toast.info(`Tournament info for ${season} ${year} already exists.`);
+        try {
+          await addDoc(tournamentsRef, tournamentData);
+          console.log("Document written with ID: ", tournamentData);
+          toast.success(`Tournament info for ${season} ${year} added successfully!`);
+        } catch (e) {
+          console.error("Error adding document: ", e);
+          toast.error("Error adding tournament info to database.");
         }
       }
 
