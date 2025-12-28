@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { load } from 'cheerio';
 import { db } from './firebase-config';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 export default function CCLSearch() {
   const [season, setSeason] = useState('spring');
@@ -124,23 +126,28 @@ export default function CCLSearch() {
           try {
             await addDoc(tournamentsRef, tournamentData);
             console.log("Document written with ID: ", tournamentData);
+            toast.success(`Tournament info for ${season} ${year} added successfully!`);
           } catch (e) {
             console.error("Error adding document: ", e);
+            toast.error("Error adding tournament info to database.");
           }
         } else {
             console.log("Tournament already exists for this season and year.");
+            toast.info(`Tournament info for ${season} ${year} already exists.`);
         }
       }
 
     } catch (error) {
       setAnswer('Error: Check API key');
       console.error(error);
+      toast.error("An error occurred during the search process.");
     }
     setLoading(false);
   };
 
   return (
     <div style={{ padding: '1rem', border: '1px solid #ccc', borderRadius: '8px' }}>
+      <ToastContainer />
       <div style={{ marginBottom: '1rem' }}>
         <label style={{ marginRight: '0.5rem' }}>Season: 
           <select 
