@@ -40,7 +40,7 @@ def extract_links_from_page(url, keywords):
         return []
 
 def main():
-    query = "Collegiate Chess League Spring 2025 site:chess.com"
+    query = "Collegiate Chess League Spring 2026 site:chess.com"
     print(f"Searching for: {query}")
     search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
 
