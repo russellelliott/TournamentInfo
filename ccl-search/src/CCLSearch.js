@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { load } from 'cheerio';
-import { db } from './firebase-config';
+import { db, storage } from './firebase-config';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -117,17 +118,46 @@ export default function CCLSearch() {
       setScrapedData(results);
 
       // Save to Firestore
-      // Note: We already checked for existence at the start, but we'll just add the doc here.
-      // Since we returned early if it existed, we can assume it's safe to add, 
-      // or we can keep a check if we want to be extra safe against race conditions.
-      // For simplicity and since we are in a single user flow mostly, we can just add.
+      // tournamentsRef is already defined at the top of the try block
       
       for (const result of results) {
+        let pdfStorageUrl = '';
+        
+        // Handle PDF upload if exists
+        if (result.pdf[0]) {
+          try {
+            const pdfLink = result.pdf[0];
+            
+            // Convert Google Drive view link to download link
+            const driveIdMatch = pdfLink.match(/\/d\/(.+?)\//);
+            if (driveIdMatch && driveIdMatch[1]) {
+              const fileId = driveIdMatch[1];
+              const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+              
+              // Fetch public PDF directly
+              const response = await fetch(downloadUrl);
+              const pdfBlob = await response.blob();
+
+              // Upload to Firebase Storage with organized path
+              const fileName = `ccl/${season}/${year}/${Date.now()}_ccl_${season}_${year}.pdf`;
+              const storageRef = ref(storage, fileName);
+              await uploadBytes(storageRef, pdfBlob);
+              
+              pdfStorageUrl = await getDownloadURL(storageRef);
+              console.log("PDF uploaded successfully:", pdfStorageUrl);
+            }
+          } catch (e) {
+            console.error("Error uploading PDF:", e);
+            toast.error("Failed to upload PDF to storage.");
+          }
+        }
+
         const tournamentData = {
           season: season,
           year: year,
           source: result.url,
           pdf: result.pdf[0] || '',
+          pdfStorageUrl: pdfStorageUrl,
           instructions: result.instructions[0] || '',
           registration: result.registration[0] || '',
           fairPlay: result.fairPlay[0] || '',
@@ -164,7 +194,7 @@ export default function CCLSearch() {
           >
             <option value="fall">Fall</option>
             <option value="spring">Spring</option>
-            <option value="summer">Summer</option>
+            {/* <option value="summer">Summer</option> */}
           </select>
         </label>
         <label style={{ marginLeft: '1rem' }}>Year: 
