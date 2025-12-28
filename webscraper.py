@@ -41,6 +41,7 @@ def extract_links_from_page(url, keywords):
 
 def main():
     query = "Collegiate Chess League Spring 2026 site:chess.com"
+    target_year = "2026"
     print(f"Searching for: {query}")
     search_results = google_search(query, API_KEY, SEARCH_ENGINE_ID)
 
@@ -48,6 +49,13 @@ def main():
     registration_form_link = None
 
     for link in search_results:
+        if "india" in link.lower():
+            print(f"Skipping link (contains 'india'): {link}")
+            continue
+        if target_year not in link:
+            print(f"Skipping link (missing {target_year}): {link}")
+            continue
+
         print(f"Processing: {link}")
         extracted_links = extract_links_from_page(link, ['drive.google.com', 'forms.gle'])
         for extracted_link in extracted_links:
