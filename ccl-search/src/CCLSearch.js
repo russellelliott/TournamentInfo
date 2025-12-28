@@ -72,24 +72,29 @@ export default function CCLSearch() {
             const text = $(el).text().toLowerCase();
             if (!href) return;
 
+            const lowerHref = href.toLowerCase();
+
             // Filter out generic chess.com registration/login links
-            if (href.includes('chess.com/register') || href.includes('chess.com/login')) return;
+            if (lowerHref.includes('chess.com/register') || lowerHref.includes('chess.com/login')) return;
 
             const addLink = (arr, link) => {
                 if (!arr.includes(link)) arr.push(link);
             };
 
-            if (text.includes('pdf') || href.toLowerCase().includes('.pdf') || href.includes('drive.google.com') || (href.includes('docs.google.com') && !href.includes('/forms/'))) addLink(result.pdf, href);
+            if (text.includes('pdf') || lowerHref.includes('.pdf') || lowerHref.includes('drive.google.com') || (lowerHref.includes('docs.google.com') && !lowerHref.includes('/forms/'))) addLink(result.pdf, href);
             if (text.includes('instruction')) addLink(result.instructions, href);
-            if (text.includes('registration') || text.includes('register') || text.includes('sign up') || href.includes('forms.gle') || href.includes('docs.google.com/forms')) addLink(result.registration, href);
-            if (text.includes('fair play')) addLink(result.fairPlay, href);
-            if (text.includes('platform') || text.includes('chess.com') || text.includes('tornelo')) addLink(result.platform, href);
+            if (text.includes('registration') || text.includes('register') || text.includes('sign up') || lowerHref.includes('forms.gle') || lowerHref.includes('docs.google.com/forms')) addLink(result.registration, href);
+            if (lowerHref.includes('fairplay-agreement') || (text.includes('fair play') && !lowerHref.includes('user-agreement') && !lowerHref.includes('/cheating') && !lowerHref.includes('legal'))) addLink(result.fairPlay, href);
+            if (lowerHref.includes('pcl.gg')) addLink(result.platform, href);
           });
           
-          results.push(result);
+          // Only add result if it has at least one link found
+          if (result.pdf.length > 0 || result.instructions.length > 0 || result.registration.length > 0 || result.fairPlay.length > 0 || result.platform.length > 0) {
+            results.push(result);
+          }
         } catch (e) {
           console.error(`Failed to scrape ${url}`, e);
-          results.push({ url, error: 'Failed to scrape (likely CORS blocked)' });
+          // Don't add failed scrapes to results to keep UI clean, or handle differently if needed
         }
       }
       setScrapedData(results);
