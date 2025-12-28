@@ -72,6 +72,9 @@ export default function CCLSearch() {
             const text = $(el).text().toLowerCase();
             if (!href) return;
 
+            // Filter out generic chess.com registration/login links
+            if (href.includes('chess.com/register') || href.includes('chess.com/login')) return;
+
             const addLink = (arr, link) => {
                 if (!arr.includes(link)) arr.push(link);
             };
