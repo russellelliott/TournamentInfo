@@ -76,9 +76,9 @@ export default function CCLSearch() {
                 if (!arr.includes(link)) arr.push(link);
             };
 
-            if (text.includes('pdf') || href.toLowerCase().includes('.pdf')) addLink(result.pdf, href);
+            if (text.includes('pdf') || href.toLowerCase().includes('.pdf') || href.includes('drive.google.com') || (href.includes('docs.google.com') && !href.includes('/forms/'))) addLink(result.pdf, href);
             if (text.includes('instruction')) addLink(result.instructions, href);
-            if (text.includes('registration') || text.includes('register') || text.includes('sign up')) addLink(result.registration, href);
+            if (text.includes('registration') || text.includes('register') || text.includes('sign up') || href.includes('forms.gle') || href.includes('docs.google.com/forms')) addLink(result.registration, href);
             if (text.includes('fair play')) addLink(result.fairPlay, href);
             if (text.includes('platform') || text.includes('chess.com') || text.includes('tornelo')) addLink(result.platform, href);
           });
