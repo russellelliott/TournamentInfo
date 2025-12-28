@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { load } from 'cheerio';
+import { db } from './firebase-config';
+import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 
 export default function CCLSearch() {
   const [season, setSeason] = useState('spring');
@@ -10,7 +12,7 @@ export default function CCLSearch() {
   const [loading, setLoading] = useState(false);
 
   const search = async () => {
-    const query = `Collegiate Chess League ${season.charAt(0).toUpperCase() + season.slice(1)} ${year} site:chess.com`;
+    const searchQuery = `Collegiate Chess League ${season.charAt(0).toUpperCase() + season.slice(1)} ${year} site:chess.com`;
     setLoading(true);
     setScrapedData([]);
     
@@ -23,7 +25,7 @@ export default function CCLSearch() {
         },
         body: JSON.stringify({
           model: 'sonar-pro',
-          messages: [{ role: 'user', content: query }]
+          messages: [{ role: 'user', content: searchQuery }]
         })
       });
 
@@ -98,6 +100,37 @@ export default function CCLSearch() {
         }
       }
       setScrapedData(results);
+
+      // Save to Firestore
+      const tournamentsRef = collection(db, "ccl-tournament-info");
+      
+      for (const result of results) {
+        const tournamentData = {
+          season: season,
+          year: year,
+          source: result.url,
+          pdf: result.pdf[0] || '',
+          instructions: result.instructions[0] || '',
+          registration: result.registration[0] || '',
+          fairPlay: result.fairPlay[0] || '',
+          platform: result.platform[0] || ''
+        };
+
+        // Check if exists
+        const q = query(tournamentsRef, where("season", "==", season), where("year", "==", year));
+        const querySnapshot = await getDocs(q);
+
+        if (querySnapshot.empty) {
+          try {
+            await addDoc(tournamentsRef, tournamentData);
+            console.log("Document written with ID: ", tournamentData);
+          } catch (e) {
+            console.error("Error adding document: ", e);
+          }
+        } else {
+            console.log("Tournament already exists for this season and year.");
+        }
+      }
 
     } catch (error) {
       setAnswer('Error: Check API key');
